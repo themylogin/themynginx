@@ -1,0 +1,71 @@
+{% set listen %}
+    server_name {{ server_name }} {% for a in alias %}{{ a }}{% endfor %};
+{% endset %}
+
+{% set body %}
+    {% if proxy %}
+        location / {
+            proxy_pass {{ proxy }};
+
+            proxy_buffering         off;
+            proxy_read_timeout      86400s;
+            proxy_request_buffering off;
+
+            proxy_set_header    Host $http_host;
+            proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header    X-Forwarded-Proto $scheme;
+            proxy_set_header    X-Real-IP $remote_addr;
+        }
+    {% endif %}
+
+    {{ extra }}
+{% endset %}
+
+
+{% if letsencrypt %}
+    server {
+        {{ listen }}
+
+        location ^~ /.well-known {
+            allow all;
+            root  {{ letsencrypt_webroot_dir }}/;
+        }
+
+        location / {
+            return 301 https://$server_name$request_uri;
+        }
+    }
+
+    {% if has_letsencrypt_cert %}
+        server {
+            listen 443 ssl;
+
+            {{ listen }}
+
+            ssl                     on;
+
+            add_header              Strict-Transport-Security "max-age=31536000" always;
+
+            ssl_session_cache       shared:SSL:20m;
+            ssl_session_timeout     10m;
+
+            ssl_protocols           TLSv1 TLSv1.1 TLSv1.2;
+
+            ssl_stapling            on;
+            ssl_stapling_verify     on;
+            resolver                8.8.8.8 8.8.4.4;
+
+            ssl_certificate         {{ letsencrypt_cert_dir }}/fullchain.pem;
+            ssl_certificate_key     {{ letsencrypt_cert_dir }}/privkey.pem;
+            ssl_trusted_certificate {{ letsencrypt_cert_dir }}/chain.pem;
+
+            {{ body }}
+        }
+    {% endif %}
+{% else %}
+    server {
+        {{ listen }}
+
+        {{ body }}
+    }
+{% endif %}
